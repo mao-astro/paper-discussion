@@ -1,9 +1,8 @@
 name: Generate arXiv HTML
 
 on:
-  #schedule:
-    # Run every hour at the start of the hour
-  #  - cron: '0 * * * *'
+  schedule:
+    - cron: '*/15 * * * *'
   workflow_dispatch: # Allow manual triggering
 
 jobs:
