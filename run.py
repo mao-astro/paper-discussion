@@ -17,11 +17,12 @@ Usage:
 import argparse
 import csv
 import html
+import json
 import re
 import urllib.parse
 import urllib.request
 
-import feedparser  # type: ignore
+import feedparser
 
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
 
@@ -38,7 +39,7 @@ RE_ARXIV_ID = re.compile(
 )
 
 
-def normalize_arxiv_id(raw_id: str) -> str:
+def normalize_arxiv_id(raw_arxiv_id):
     """Extract canonical arXiv ID from any reasonable string.
 
     - Uses RE_ARXIV_ID to locate either a new-style (YYMM.NNNN/NNNNN)
@@ -46,13 +47,13 @@ def normalize_arxiv_id(raw_id: str) -> str:
     - Returns the ID in lowercase, without version info, or empty string if
       nothing can be found.
     """
-    m = RE_ARXIV_ID.search(raw_id)
+    m = RE_ARXIV_ID.search(raw_arxiv_id)
     if not m:
-        return ""
+        return
     return m.group(0).lower()
 
 
-def fetch_arxiv_metadata(arxiv_ids):
+def fetch_arxiv_metadata(arxiv_ids, existing_metadata=None):
     """
     Fetch metadata from arXiv for a list of arXiv IDs.
 
@@ -67,24 +68,28 @@ def fetch_arxiv_metadata(arxiv_ids):
         Mapping from canonical arXiv ID (without version, lowercase)
         to a dictionary with keys: id, title, authors, abstract, url, pdf_url.
     """
+
+    metadata = existing_metadata or {}
+
     # Normalize and deduplicate
-    normalized_ids = []
-    seen = set()
-    for raw in arxiv_ids:
-        nid = normalize_arxiv_id(raw)
-        if not nid or nid in seen:
+    normalized_arxiv_ids = []
+    for raw_arxiv_id in arxiv_ids:
+        arxiv_id = normalize_arxiv_id(raw_arxiv_id)
+        if not arxiv_id:
             continue
-        seen.add(nid)
-        normalized_ids.append(nid)
+        if arxiv_id in metadata:
+            continue
+        if arxiv_id in normalized_arxiv_ids:
+            continue
+        normalized_arxiv_ids.append(arxiv_id)
 
-    if not normalized_ids:
-        return {}
+    if not normalized_arxiv_ids:
+        return metadata
 
-    metadata = {}
     BATCH_SIZE = 50
 
-    for start in range(0, len(normalized_ids), BATCH_SIZE):
-        batch = normalized_ids[start : start + BATCH_SIZE]
+    for start in range(0, len(normalized_arxiv_ids), BATCH_SIZE):
+        batch = normalized_arxiv_ids[start:(start+BATCH_SIZE)]
         ids_param = ",".join(batch)
         params = urllib.parse.urlencode({"id_list": ids_param})
         url = f"{ARXIV_API_URL}?{params}"
@@ -102,6 +107,7 @@ def fetch_arxiv_metadata(arxiv_ids):
 
             authors = [a.get("name", "").strip() for a in entry.get("authors", [])]
             authors = [a for a in authors if a]
+            authors = authors[:6]
 
             title = entry.get("title", "").strip().replace("\n", " ")
             abstract = entry.get("summary", "").strip()
@@ -138,7 +144,7 @@ def fetch_arxiv_metadata(arxiv_ids):
 
 def read_csv(path):
     """Read the input CSV file and return a list of row dictionaries."""
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path) as f:
         reader = csv.DictReader(f)
         return list(reader)
 
@@ -260,27 +266,32 @@ def main(argv=None):
     )
     parser.add_argument("input_csv", help="Path to input CSV file.")
     parser.add_argument("output_html", help="Path to output HTML file.")
+    parser.add_argument("--cache", help="Path to cache file.")
 
     args = parser.parse_args(argv)
 
     rows = read_csv(args.input_csv)
 
     # Collect all arXiv IDs from the CSV
-    arxiv_ids = [
-        (row.get(ARXIV_ID_FIELD) or "").strip()
-        for row in rows
-        if (row.get(ARXIV_ID_FIELD) or "").strip()
-    ]
+    arxiv_ids = [row.get(ARXIV_ID_FIELD, "").strip() for row in rows]
 
-    metadata_by_id = fetch_arxiv_metadata(arxiv_ids)
+    if args.cache:
+        with open(args.cache, "r") as f:
+            metadata_by_id = json.load(f)
+
+    metadata_by_id = fetch_arxiv_metadata(arxiv_ids, metadata_by_id)
+
+    if args.cache:
+        with open(args.cache, "w") as f:
+            json.dump(metadata_by_id, f)
 
     html_text = build_html(rows, metadata_by_id)
 
-    with open(args.output_html, "w", encoding="utf-8") as f:
+    with open(args.output_html, "w") as f:
         f.write(html_text)
 
-    return 0
+    return
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

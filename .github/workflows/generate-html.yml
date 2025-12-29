@@ -1,47 +1,73 @@
 name: Generate arXiv HTML
 
 on:
-  schedule:
+  #schedule:
     # Run every hour at the start of the hour
-    - cron: '0 * * * *'
+  #  - cron: '0 * * * *'
   workflow_dispatch: # Allow manual triggering
-
-permissions:
-  contents: write
 
 jobs:
   generate-html:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
+      - name: Restore input cache
+        uses: actions/cache/restore@v5
+        with:
+          path: _input.csv
+          key: input-cache-
+
+      - name: Download input CSV
+        run: curl -L ${{ secrets.INPUT_CSV_URL }} -o _input.new.csv
+
+      - name: Check if input CSV has changed
+        id: check_input
+        if: ${{ hashFiles('_input.new.csv') != hashFiles('_input.csv') }}
+        run: mv _input.new.csv _input.csv
+
+      - name: Save input cache
+        if: steps.check_input.outcome == 'success'
+        uses: actions/cache/save@v5
+        with:
+          path: _input.csv
+          key: input-cache-${{ github.run_id }}
+
+      - name: Restore data cache
+        if: steps.check_input.outcome == 'success'
+        uses: actions/cache/restore@v5
+        with:
+          path: _data.pkl
+          key: data-cache-
+
       - name: Set up Python
-        uses: actions/setup-python@v5
+        if: steps.check_input.outcome == 'success'
+        uses: actions/setup-python@v6
         with:
           python-version: '3.x'
           cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-      
-      - name: Create pages directory
-        run: mkdir -p pages
-      
+
+      - name: Install Python dependencies
+        if: steps.check_input.outcome == 'success'
+        run: pip install -r requirements.txt
+
+      - name: Create output directory
+        if: steps.check_input.outcome == 'success'
+        run: mkdir -p _pages
+
       - name: Generate HTML
-        run: |
-          python run.py papers.csv pages/index.html
-      
-      - name: Commit and push changes
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add pages/index.html
-          if ! git diff --staged --quiet; then
-            git commit -m "Auto-generate HTML from arXiv data"
-            git push
-          else
-            echo "No changes to commit"
-          fi
+        if: steps.check_input.outcome == 'success'
+        run: python run.py ${{ secrets.INPUT_CSV_URL }} _data.pkl _pages
+
+      - name: Save data cache
+        if: steps.check_input.outcome == 'success'
+        uses: actions/cache/save@v5
+        with:
+          path: _data.pkl
+          key: data-cache-${{ github.run_id }}
+
+      - uses: peaceiris/actions-gh-pages@v4
+        if: steps.check_input.outcome == 'success'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: _pages
