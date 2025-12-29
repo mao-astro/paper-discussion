@@ -37,19 +37,14 @@ jobs:
         if: steps.check_input.outcome == 'success'
         uses: actions/cache/restore@v5
         with:
-          path: _data.pkl
+          path: _data.json
           key: data-cache-
 
       - name: Set up Python
         if: steps.check_input.outcome == 'success'
         uses: actions/setup-python@v6
         with:
-          python-version: '3.x'
-          cache: 'pip'
-
-      - name: Install Python dependencies
-        if: steps.check_input.outcome == 'success'
-        run: pip install -r requirements.txt
+          python-version: '3.13'
 
       - name: Create output directory
         if: steps.check_input.outcome == 'success'
@@ -57,13 +52,13 @@ jobs:
 
       - name: Generate HTML
         if: steps.check_input.outcome == 'success'
-        run: python run.py ${{ secrets.INPUT_CSV_URL }} _data.pkl _pages
+        run: python run.py _input.csv _pages/index.html --cache=_data.json
 
       - name: Save data cache
         if: steps.check_input.outcome == 'success'
         uses: actions/cache/save@v5
         with:
-          path: _data.pkl
+          path: _data.json
           key: data-cache-${{ github.run_id }}
 
       - uses: peaceiris/actions-gh-pages@v4

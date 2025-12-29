@@ -19,127 +19,137 @@ import csv
 import html
 import json
 import re
+import ssl
+import time
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 
-import feedparser
 
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
 
-# CSV column names (adjust here if your CSV uses different headers)
-DATE_FIELD = "date"
-NAME_FIELD = "name"
-ARXIV_ID_FIELD = "arXiv ID"
-COMMENTS_FIELD = "comments"
-
-# Your arXiv ID regex
-RE_ARXIV_ID = re.compile(
-    r"\b(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Za-z-]+)?/\d{7})\b",
+ARXIV_ID_RE = re.compile(
+    r"\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Za-z-]+)?/\d{7}",
     flags=re.IGNORECASE,
 )
 
+ARXIV_XML_NS = {"atom": "http://www.w3.org/2005/Atom"}
+
 
 def normalize_arxiv_id(raw_arxiv_id):
-    """Extract canonical arXiv ID from any reasonable string.
-
-    - Uses RE_ARXIV_ID to locate either a new-style (YYMM.NNNN/NNNNN)
-      or old-style (archive/NNNNNNN) arXiv identifier.
-    - Returns the ID in lowercase, without version info, or empty string if
-      nothing can be found.
-    """
-    m = RE_ARXIV_ID.search(raw_arxiv_id)
+    m = ARXIV_ID_RE.search(raw_arxiv_id)
     if not m:
         return
     return m.group(0).lower()
 
 
+def load_url(url, check_prefix="<?xml"):
+    context = ssl._create_unverified_context()
+    for i in range(1, 11):
+        try:
+            feed = urllib.request.urlopen(url, timeout=20, context=context).read().decode('utf-8')
+        except IOError:
+            pass
+        else:
+            if (check_prefix and feed.startswith(check_prefix)) or (feed and not check_prefix):
+                return feed
+        time.sleep(i * 2)
+    raise IOError("Not able to connect to " + url)
+
+
+class ArxivEntry:
+    def __init__(self, entry):
+        self.entry = entry
+        self._attr_cache = dict()
+
+    def __getattr__(self, name):
+        _ns = ARXIV_XML_NS
+        if name not in self._attr_cache:
+
+            if name == "authors":
+                output = [
+                    author.findtext("atom:name", "", _ns)
+                    for author in self.entry.iterfind("atom:author", _ns)
+                ]
+            elif name == "first_author":
+                output = self.entry.find("atom:author", _ns).findtext("atom:name", "", _ns)
+            elif name in ("key", "id"):
+                output = normalize_arxiv_id(self.entry.findtext("atom:id", "", _ns))
+            else:
+                output = self.entry.findtext("atom:{}".format(name), None, _ns)
+
+            if output is not None:
+                self._attr_cache[name] = output
+
+        return self._attr_cache[name]
+
+    __getitem__ = __getattr__
+
+
+class ArxivFetcher:
+    def __init__(self, url):
+        self.url = url
+        self.xml = load_url(self.url)
+        try:
+            self.root = ET.fromstring(self.xml)
+        except ET.ParseError as e:
+            print("Something wrong with URL: {}".format(self.url))
+            raise e
+
+        first_entry = self.root.find("atom:entry", ARXIV_XML_NS)
+        if (
+            first_entry is not None
+            and first_entry.findtext("atom:title", "Error", ARXIV_XML_NS) == "Error"
+        ):
+            self.root.remove(first_entry)
+
+        self._entries = None
+
+    @property
+    def entries(self):
+        if self._entries is None:
+            self._entries = [ArxivEntry(e) for e in self.root.findall("atom:entry", ARXIV_XML_NS)]
+        return list(self._entries)
+
+    def iterentries(self):
+        for entry in self.entries:
+            yield entry
+
+    def getentries(self):
+        return self.entries
+
+
 def fetch_arxiv_metadata(arxiv_ids, existing_metadata=None):
-    """
-    Fetch metadata from arXiv for a list of arXiv IDs.
-
-    Parameters
-    ----------
-    arxiv_ids : Iterable[str]
-        List of arXiv IDs (any reasonable form; they will be normalized).
-
-    Returns
-    -------
-    dict
-        Mapping from canonical arXiv ID (without version, lowercase)
-        to a dictionary with keys: id, title, authors, abstract, url, pdf_url.
-    """
-
     metadata = existing_metadata or {}
+    arxiv_ids = list(set(arxiv_ids) - set(metadata.keys()))
 
-    # Normalize and deduplicate
-    normalized_arxiv_ids = []
-    for raw_arxiv_id in arxiv_ids:
-        arxiv_id = normalize_arxiv_id(raw_arxiv_id)
-        if not arxiv_id:
-            continue
-        if arxiv_id in metadata:
-            continue
-        if arxiv_id in normalized_arxiv_ids:
-            continue
-        normalized_arxiv_ids.append(arxiv_id)
-
-    if not normalized_arxiv_ids:
+    if not arxiv_ids:
         return metadata
 
+    AUTHORS_LIMIT = 6
     BATCH_SIZE = 50
 
-    for start in range(0, len(normalized_arxiv_ids), BATCH_SIZE):
-        batch = normalized_arxiv_ids[start:(start+BATCH_SIZE)]
-        ids_param = ",".join(batch)
-        params = urllib.parse.urlencode({"id_list": ids_param})
-        url = f"{ARXIV_API_URL}?{params}"
-
-        with urllib.request.urlopen(url) as response:
-            data = response.read()
-
-        feed = feedparser.parse(data)
-
-        for entry in feed.entries:
-            # entry.id is usually a URL like 'http://arxiv.org/abs/1234.5678v1'
-            base_id = normalize_arxiv_id(entry.get("id", ""))
-            if not base_id:
-                continue
-
-            authors = [a.get("name", "").strip() for a in entry.get("authors", [])]
-            authors = [a for a in authors if a]
-            authors = authors[:6]
-
-            title = entry.get("title", "").strip().replace("\n", " ")
-            abstract = entry.get("summary", "").strip()
-
-            arxiv_url = None
-            pdf_url = None
-            for link in entry.get("links", []):
-                href = link.get("href")
-                if not href:
-                    continue
-                rel = link.get("rel", "").lower()
-                title_attr = (link.get("title") or "").lower()
-                if rel == "alternate":
-                    arxiv_url = href
-                if title_attr == "pdf":
-                    pdf_url = href
-
-            if not arxiv_url:
-                arxiv_url = f"https://arxiv.org/abs/{base_id}"
-            if not pdf_url:
-                pdf_url = f"https://arxiv.org/pdf/{base_id}.pdf"
-
-            metadata[base_id] = {
-                "id": base_id,
-                "title": title,
-                "authors": authors,
-                "abstract": abstract,
-                "url": arxiv_url,
-                "pdf_url": pdf_url,
+    for start in range(0, len(arxiv_ids), BATCH_SIZE):
+        batch = arxiv_ids[start:(start+BATCH_SIZE)]
+        params = urllib.parse.urlencode({"id_list": ",".join(batch), "max_results": BATCH_SIZE})
+        arxiv_results = ArxivFetcher(f"{ARXIV_API_URL}?{params}")
+        for entry in arxiv_results.entries:
+            metadata[entry.id] = {
+                "title": entry.title,
+                "authors": entry.authors[:AUTHORS_LIMIT],
+                "has_more_authors": len(entry.authors) > AUTHORS_LIMIT,
+                "abstract": entry.summary,
             }
 
     return metadata
+
+
+# CSV column names (adjust here if your CSV uses different headers)
+DATE_FIELD = "Timestamp"
+NAME_FIELD = "Name"
+ARXIV_ID_FIELD = "arXiv URL or ID"
+COMMENTS_FIELD = "Comments"
+HIDE_FIELD = "Hide"
 
 
 def read_csv(path):
@@ -149,111 +159,219 @@ def read_csv(path):
         return list(reader)
 
 
+def process_csv_rows(rows):
+    """Process CSV rows to filter out hidden entries and normalize arXiv IDs."""
+    processed_rows = {}
+
+    for i, row in enumerate(rows):
+        if row.get(HIDE_FIELD, "").strip().lower() == "true":
+            continue
+        arxiv_id = normalize_arxiv_id(row.get(ARXIV_ID_FIELD, ""))
+        if not arxiv_id:
+            continue
+
+        name = row.get(NAME_FIELD, "").strip()
+        date = "/".join(row.get(DATE_FIELD, "").strip().split("/")[:2])
+        comments = row.get(COMMENTS_FIELD, "").strip()
+        named_comment = (name, date, comments)
+
+        if arxiv_id in processed_rows:
+            existing_entry = processed_rows[arxiv_id]
+            existing_entry["index"] = i
+            existing_entry["date"] = date
+            existing_entry["comments"].append(named_comment)
+        else:
+            processed_rows[arxiv_id] = {
+                "arxiv_id": arxiv_id,
+                "index": i,
+                "date": date,
+                "comments": [named_comment],
+            }
+
+    return sorted(processed_rows.values(), key=lambda x: x["index"], reverse=True)
+
+
+def str2html(s):
+    return "<br>".join(html.escape(line, quote=True) for line in s.splitlines())
+
+
 def build_html(rows, metadata_by_id):
     """Build the HTML string for all rows using the provided metadata."""
     parts = []
 
     parts.append("<!DOCTYPE html>")
-    parts.append("<html>")
+    parts.append('<html lang="en">')
     parts.append("<head>")
     parts.append('  <meta charset="utf-8">')
-    parts.append("  <title>arXiv Entries</title>")
+    parts.append('  <meta name="viewport" content="width=device-width, initial-scale=1.0">')
+    parts.append('  <link rel="preconnect" href="https://fonts.googleapis.com" />')
+    parts.append('  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />')
+    parts.append('  <meta name="creator" content="Yao-Yuan Mao">')
+    parts.append('  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;700&display=swap" rel="stylesheet">')
+    parts.append("  <title>Mao Astro Group Paper Discussion</title>")
+    parts.append('  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/modern-normalize/3.0.1/modern-normalize.min.css" integrity="sha512-q6WgHqiHlKyOqslT/lgBgodhd03Wp4BEqKeW6nNtlOY4quzyG3VoQKFrieaCeSnuVseNKRGpGeDU3qPmabCANg==" crossorigin="anonymous" referrerpolicy="no-referrer" />')
+    parts.append("""
+  <style>
+    html, body{
+      font-family: 'Source Sans 3', sans-serif;
+    }
+    body {
+      color: #222;
+    }
+    a:any-link {
+      color: #08c;
+      text-decoration: none;
+    }
+    .content {
+      max-width: 1020px;
+      margin: 0 auto;
+      padding: 0 16px 240px 16px;
+    }
+    .t1 {
+      margin: 4px 0;
+      padding: 8px;
+      background-color: #fff5f5;
+    }
+    .t2 {
+      padding: 2px;
+      display: inline-block;
+      vertical-align: top;
+    }
+    .t3 {
+      padding: 0;
+      display: inline-block;
+      width: 100%;
+    }
+    .entry-links {
+      width: 10%;
+    }
+    .entry-paper {
+      width: 88%;
+    }
+    .entry-id, .entry-title{
+      font-weight: 700;
+    }
+    .entry-authors{
+      font-size: 90%;
+      font-style: italic;
+    }
+    .entry-abstract, .entry-comments-all{
+      font-size: 90%;
+      padding-top: 8px;
+    }
+    .entry-comments{
+        padding-top: 4px;
+    }
+    .options {
+      margin-bottom: 15px;
+    }
+    .options div{
+      display: inline-block;
+      width: 55%;
+    }
+    .options div:last-child{
+      text-align: right;
+      width: 44%;
+    }
+    .options label{
+      display: inline-block;
+      padding: 6px;
+    }
+    @media (max-width: 800px) {
+      .t2 {
+        width: 100%;
+      }
+      .t3, .mobile_label{
+        display: inline;
+      }
+    }
+    .entries {
+      margin-bottom: 36px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .hide{
+      display: none;
+    }
+  </style>
+""")
     parts.append("</head>")
     parts.append("<body>")
-    parts.append('  <div class="page">')
+    parts.append('  <div class="content">')
+    parts.append('    <h1>Mao Astro Group Paper Discussion</h1>')
+    parts.append('    <div class="options">')
+    parts.append('      <div>')
+    parts.append('        <label><input type="checkbox" name="show-abs"> Show Abstracts</label>')
+    parts.append('        <label><input type="checkbox" checked name="show-cm"> Show Comments</label>')
+    parts.append('      </div>')
+    parts.append('      <div>')
+    parts.append(f'        <i>Generated at {time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}</i>')
+    parts.append('      </div>')
+    parts.append('    </div>')  # options
     parts.append('    <div class="entries">')
 
     for row in rows:
-        date = (row.get(DATE_FIELD) or "").strip()
-        name = (row.get(NAME_FIELD) or "").strip()
-        comments = (row.get(COMMENTS_FIELD) or "").strip()
-        raw_arxiv_id = (row.get(ARXIV_ID_FIELD) or "").strip()
+        arxiv_id = row["arxiv_id"]
+        meta = metadata_by_id.get(arxiv_id, {})
 
-        canonical_id = normalize_arxiv_id(raw_arxiv_id)
-        meta = metadata_by_id.get(canonical_id)
+        parts.append('      <div class="t1 entry">')
 
-        parts.append('      <div class="entry">')
-
-        # Header: date and name
-        parts.append('        <div class="entry-header">')
+        parts.append('        <div class="t2 entry-links">')
         parts.append(
-            '          <div class="entry-date">{}</div>'.format(
-                html.escape(date, quote=True)
+            '          <div class="t3 entry-id"><a href="{abs_url}">{id}</a></div><div class="t3">[<a href="{pdf_url}">pdf</a>][<a href="{html_url}">html</a>]</div>'.format(
+                id=arxiv_id,
+                abs_url=f"https://arxiv.org/abs/{arxiv_id}",
+                pdf_url=f"https://arxiv.org/pdf/{arxiv_id}",
+                html_url=f"https://arxiv.org/html/{arxiv_id}",
             )
         )
+        parts.append("        </div>")  # entry-links
+
+        parts.append('        <div class="t2 entry-paper">')
+
         parts.append(
-            '          <div class="entry-name">{}</div>'.format(
-                html.escape(name, quote=True)
+            f'          <div class="t3 entry-title">{str2html(meta.get("title", ""))}</div>'
+
+        )
+
+        parts.append(
+            '          <div class="t3 entry-authors">{authors}{more}</div>'.format(
+                authors=str2html(", ".join(meta.get("authors", []))),
+                more=(" et al." if meta.get("has_more_authors") else ""),
             )
         )
-        parts.append("        </div>")  # entry-header
 
-        # Comments from CSV
-        if comments:
-            comments_html = "<br>".join(
-                html.escape(line, quote=True) for line in comments.splitlines()
-            )
+        parts.append("        </div>")  # entry-paper
+
+        parts.append(
+            f'        <div class="t2 entry-abstract">{str2html(meta.get("abstract", ""))}</div>'
+        )
+
+        parts.append('        <div class="t2 entry-comments-all">')
+        for name, date, comments in row["comments"]:
+            comments_formatted = (": " + str2html(comments)) if comments else ""
             parts.append(
-                f'        <div class="entry-comments">{comments_html}</div>'
+                f'          <div class="t3 entry-comments"><b>{str2html(name)}</b> ({str2html(date)}){comments_formatted}</div>'
             )
-
-        # arXiv ID / URL
-        if raw_arxiv_id:
-            if meta and meta.get("url"):
-                arxiv_url = meta["url"]
-            else:
-                nid_for_url = canonical_id
-                arxiv_url = (
-                    f"https://arxiv.org/abs/{nid_for_url}" if nid_for_url else ""
-                )
-
-            if arxiv_url:
-                parts.append('        <div class="entry-arxiv">')
-                parts.append(
-                    '          <div class="entry-arxiv-id"><a href="{url}">{label}</a></div>'.format(
-                        url=html.escape(arxiv_url, quote=True),
-                        label=html.escape(raw_arxiv_id, quote=True),
-                    )
-                )
-                parts.append("        </div>")  # entry-arxiv
-
-        # Metadata from arXiv
-        if meta:
-            authors = meta.get("authors") or []
-            authors_str = ", ".join(authors[:6])
-
-            parts.append(
-                '        <div class="entry-title">{}</div>'.format(
-                    html.escape(meta.get("title", ""), quote=True)
-                )
-            )
-            if authors_str:
-                parts.append(
-                    '        <div class="entry-authors">{}</div>'.format(
-                        html.escape(authors_str, quote=True)
-                    )
-                )
-
-            abstract = meta.get("abstract", "")
-            if abstract:
-                abstract_html = "<br>".join(
-                    html.escape(line, quote=True)
-                    for line in abstract.splitlines()
-                )
-                parts.append(
-                    f'        <div class="entry-abstract">{abstract_html}</div>'
-                )
-        else:
-            parts.append(
-                '        <div class="entry-metadata-missing">'
-                "Metadata not found for this arXiv ID."
-                "</div>"
-            )
+        parts.append("        </div>")  # entry-comments-all
 
         parts.append("      </div>")  # entry
 
     parts.append("    </div>")  # entries
     parts.append("  </div>")  # page
+    parts.append('''
+  <script>
+    document.querySelectorAll(".t1").forEach((row, i) => {
+      row.dataset.color = (i % 2) ? "#ddd" : "#eee";
+      row.style.backgroundColor = row.dataset.color;
+      row.addEventListener("mouseenter", () => {row.style.backgroundColor = "#fff";});
+      row.addEventListener("mouseleave", () => {row.style.backgroundColor = row.dataset.color;});
+    });
+  </script>
+''')
     parts.append("</body>")
     parts.append("</html>")
 
@@ -267,17 +385,16 @@ def main(argv=None):
     parser.add_argument("input_csv", help="Path to input CSV file.")
     parser.add_argument("output_html", help="Path to output HTML file.")
     parser.add_argument("--cache", help="Path to cache file.")
-
     args = parser.parse_args(argv)
 
-    rows = read_csv(args.input_csv)
-
-    # Collect all arXiv IDs from the CSV
-    arxiv_ids = [row.get(ARXIV_ID_FIELD, "").strip() for row in rows]
+    rows = process_csv_rows(read_csv(args.input_csv))
+    arxiv_ids = [row["arxiv_id"] for row in rows]
 
     if args.cache:
         with open(args.cache, "r") as f:
             metadata_by_id = json.load(f)
+    else:
+        metadata_by_id = None
 
     metadata_by_id = fetch_arxiv_metadata(arxiv_ids, metadata_by_id)
 
