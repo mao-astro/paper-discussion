@@ -18,7 +18,7 @@ jobs:
           key: input-cache-
 
       - name: Download input CSV
-        run: curl -L ${{ secrets.INPUT_CSV_URL }} -o _input.new.csv
+        run: curl -L -o _input.new.csv "${{ secrets.INPUT_CSV_URL }}"
 
       - name: Check if input CSV has changed
         id: check_input
