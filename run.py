@@ -246,7 +246,10 @@ def build_html(rows, metadata_by_id):
       width: 10%;
     }
     .entry-paper {
-      width: 88%;
+      width: 87%;
+    }
+    .entry-control {
+      width: 2%;
     }
     .entry-id, .entry-title{
       font-weight: 700;
@@ -346,11 +349,13 @@ def build_html(rows, metadata_by_id):
 
         parts.append("        </div>")  # entry-paper
 
+        parts.append(f'        <div class="t2 entry-control"><a class="t3" href="javascript:toggle(\'abs-{row["index"]}\')">📖</a><a class="t3" href="javascript:toggle(\'cm-{row["index"]}\')">💬</a></div>')
+
         parts.append(
-            f'        <div class="t2 entry-abstract">{str2html(meta.get("abstract", ""))}</div>'
+            f'        <div class="t2 entry-abstract hide" id="abs-{row["index"]}">{str2html(meta.get("abstract", ""))}</div>'
         )
 
-        parts.append('        <div class="t2 entry-comments-all">')
+        parts.append('        <div class="t2 entry-comments-all" id="cm-{}">'.format(row["index"]))
         for name, date, comments in row["comments"]:
             comments_formatted = (": " + str2html(comments)) if comments else ""
             parts.append(
@@ -370,6 +375,31 @@ def build_html(rows, metadata_by_id):
       row.addEventListener("mouseenter", () => {row.style.backgroundColor = "#fff";});
       row.addEventListener("mouseleave", () => {row.style.backgroundColor = row.dataset.color;});
     });
+
+    const toggle = function(id) {
+      document.getElementById(id).classList.toggle("hide");
+    };
+
+    const showAbsAll = function() {
+      const checked = document.querySelector('input[name="show-abs"]').checked;
+      if (checked) {
+        document.querySelectorAll(".entry-abstract").forEach((abs) => {abs.classList.remove("hide");});
+      } else {
+        document.querySelectorAll(".entry-abstract").forEach((abs) => {abs.classList.add("hide");});
+      }
+    };
+    document.querySelector('input[name="show-abs"]').addEventListener("change", showAbsAll);
+
+    const showCmAll = function() {
+      const checked = document.querySelector('input[name="show-cm"]').checked;
+      if (checked) {
+        document.querySelectorAll(".entry-comments-all").forEach((cm) => {cm.classList.remove("hide");});
+      } else {
+        document.querySelectorAll(".entry-comments-all").forEach((cm) => {cm.classList.add("hide");});
+      }
+    };
+    document.querySelector('input[name="show-cm"]').addEventListener("change", showCmAll);
+
   </script>
 ''')
     parts.append("</body>")
