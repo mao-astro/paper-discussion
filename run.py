@@ -19,6 +19,7 @@ import csv
 import html
 import json
 import re
+import os
 import ssl
 import time
 import urllib.parse
@@ -420,7 +421,7 @@ def main(argv=None):
     rows = process_csv_rows(read_csv(args.input_csv))
     arxiv_ids = [row["arxiv_id"] for row in rows]
 
-    if args.cache:
+    if args.cache and os.path.exists(args.cache):
         with open(args.cache, "r") as f:
             metadata_by_id = json.load(f)
     else:

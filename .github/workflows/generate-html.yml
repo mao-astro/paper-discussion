@@ -2,7 +2,7 @@ name: Generate arXiv HTML
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch: # Allow manual triggering
 
 jobs:
