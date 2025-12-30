@@ -9,13 +9,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;700&display=swap" rel="stylesheet">
   <title>Mao Astro Group Paper Discussion</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/modern-normalize/3.0.1/modern-normalize.min.css" integrity="sha512-q6WgHqiHlKyOqslT/lgBgodhd03Wp4BEqKeW6nNtlOY4quzyG3VoQKFrieaCeSnuVseNKRGpGeDU3qPmabCANg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-
   <style>
     html, body{
       font-family: 'Source Sans 3', sans-serif;
     }
     body {
       color: #222;
+      padding-bottom: 36px;
     }
     a:any-link {
       color: #08c;
@@ -29,7 +29,6 @@
     .t1 {
       margin: 4px 0;
       padding: 8px;
-      background-color: #fff5f5;
     }
     .t2 {
       padding: 2px;
@@ -69,11 +68,11 @@
     }
     .options div{
       display: inline-block;
-      width: 55%;
+      width: 68%;
     }
     .options div:last-child{
       text-align: right;
-      width: 44%;
+      width: 30%;
     }
     .options label{
       display: inline-block;
@@ -83,23 +82,14 @@
       .t2 {
         width: 100%;
       }
-      .t3, .mobile_label{
+      .t3{
         display: inline;
       }
-    }
-    .entries {
-      margin-bottom: 36px;
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 16px;
     }
     .hide{
       display: none;
     }
   </style>
-
 </head>
 <body>
   <div class="content">
@@ -110,24 +100,10 @@
         <label><input type="checkbox" checked name="show-cm"> Show Comments</label>
       </div>
       <div>
-        <i>Generated at 2025-12-30 00:09:02</i>
+        <i>Generated 12/29/2025 19:38:23</i>
       </div>
     </div>
     <div class="entries">
-      <div class="t1 entry">
-        <div class="t2 entry-links">
-          <div class="t3 entry-id"><a href="https://arxiv.org/abs/2512.13823">2512.13823</a></div><div class="t3">[<a href="https://arxiv.org/pdf/2512.13823">pdf</a>][<a href="https://arxiv.org/html/2512.13823">html</a>]</div>
-        </div>
-        <div class="t2 entry-paper">
-          <div class="t3 entry-title">Searching for Intermediate-Mass Black Holes in Milky Way satellites</div>
-          <div class="t3 entry-authors">R. Pascale, G. Battaglia</div>
-        </div>
-        <div class="t2 entry-control"><a class="t3" href="javascript:toggle('abs-2')">📖</a><a class="t3" href="javascript:toggle('cm-2')">💬</a></div>
-        <div class="t2 entry-abstract hide" id="abs-2">Intermediate-mass black holes (IMBHs), with masses between roughly $10^2\,M_\odot$ and $10^5\,M_\odot$, represent a largely uncharted component of the black-hole (BH) population. They are theoretically predicted to form in several early-Universe pathways, including the remnants of massive Population III stars, the runaway collapse of dense stellar clusters, and the direct collapse of metal-poor gas. Establishing whether IMBHs are present in dwarf galaxy satellites of the Milky Way (MW), and with what occupation fraction - i.e. the fraction of galaxies with a certain stellar mass that host a central BH - provides one of the most incisive tests of BH seed formation models. Despite their importance, present dynamical constraints on IMBHs remain weak. Dynamical IMBH masses or upper limits are available for very few such systems, with secure detections in less than ten cases. A next-generation wide-field spectroscopic facility, capable of combining deep multiplexed stellar spectroscopy with high-resolution integral-field observations of galaxy centers, would open access to IMBH masses in the $\leq10\,M_\odot$ regime. Such an advance would make possible - for the first time - a robust measurement of the IMBH occupation fraction in dwarf galaxies. A key scientific requirement for the coming decades is to establish the observational and instrumental capabilities needed to detect or tightly constrain IMBHs in nearby dwarf galaxies, particularly in the $\simeq10^3-10^4 \,M_\odot$ mass range, and thereby enable a measurement of their occupation fraction. Such a measurement is fundamental for distinguishing between competing scenarios for the formation of BH seeds in the early Universe.</div>
-        <div class="t2 entry-comments-all" id="cm-2">
-          <div class="t3 entry-comments"><b>Yao</b> (12/29): test3</div>
-        </div>
-      </div>
       <div class="t1 entry">
         <div class="t2 entry-links">
           <div class="t3 entry-id"><a href="https://arxiv.org/abs/2512.11035">2512.11035</a></div><div class="t3">[<a href="https://arxiv.org/pdf/2512.11035">pdf</a>][<a href="https://arxiv.org/html/2512.11035">html</a>]</div>
@@ -145,7 +121,6 @@
       </div>
     </div>
   </div>
-
   <script>
     document.querySelectorAll(".t1").forEach((row, i) => {
       row.dataset.color = (i % 2) ? "#ddd" : "#eee";
@@ -177,8 +152,6 @@
       }
     };
     document.querySelector('input[name="show-cm"]').addEventListener("change", showCmAll);
-
   </script>
-
 </body>
 </html>
