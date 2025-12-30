@@ -17,26 +17,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Restore input cache
+      - name: Restore cache
         uses: actions/cache/restore@v5
         with:
-          path: _input.csv
-          key: input-cache
+          path: _data
+          key: data-cache-
+
+      - name: Create directories
+        run: mkdir -p _pages _data
 
       - name: Download input CSV
-        run: curl -L -o _input.new.csv "${{ secrets.INPUT_CSV_URL }}"
+        run: curl -L -o _data/input.new.csv "${{ secrets.INPUT_CSV_URL }}"
 
       - name: Check if input CSV has changed
         id: check_input
-        if: ${{ hashFiles('_input.new.csv') != hashFiles('_input.csv') }}
-        run: mv _input.new.csv _input.csv
-
-      - name: Restore data cache
-        if: steps.check_input.outcome == 'success'
-        uses: actions/cache/restore@v5
-        with:
-          path: _data.json
-          key: data-cache
+        if: ${{ hashFiles('_data/input.new.csv') != hashFiles('_data/input.csv') }}
+        run: mv _data/input.new.csv _data/input.csv
 
       - name: Set up Python
         if: steps.check_input.outcome == 'success'
@@ -44,27 +40,16 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Create output directory
-        if: steps.check_input.outcome == 'success'
-        run: mkdir -p _pages
-
       - name: Generate HTML
         if: steps.check_input.outcome == 'success'
-        run: python run.py _input.csv template.html _pages/index.html --cache=_data.json
+        run: python run.py _data/input.csv template.html _pages/index.html --cache=_data/meta.json
 
-      - name: Save input cache
+      - name: Save cache
         if: steps.check_input.outcome == 'success'
         uses: actions/cache/save@v5
         with:
-          path: _input.csv
-          key: input-cache
-
-      - name: Save data cache
-        if: steps.check_input.outcome == 'success'
-        uses: actions/cache/save@v5
-        with:
-          path: _data.json
-          key: data-cache
+          path: _data
+          key: data-cache-${{ github.run_id }}
 
       - uses: peaceiris/actions-gh-pages@v4
         if: steps.check_input.outcome == 'success'
