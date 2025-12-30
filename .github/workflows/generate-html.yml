@@ -21,7 +21,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: _input.csv
-          key: input-cache-
+          key: input-cache
 
       - name: Download input CSV
         run: curl -L -o _input.new.csv "${{ secrets.INPUT_CSV_URL }}"
@@ -36,7 +36,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: _data.json
-          key: data-cache-
+          key: data-cache
 
       - name: Set up Python
         if: steps.check_input.outcome == 'success'
@@ -57,14 +57,14 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: _input.csv
-          key: input-cache-${{ github.run_id }}
+          key: input-cache
 
       - name: Save data cache
         if: steps.check_input.outcome == 'success'
         uses: actions/cache/save@v5
         with:
           path: _data.json
-          key: data-cache-${{ github.run_id }}
+          key: data-cache
 
       - uses: peaceiris/actions-gh-pages@v4
         if: steps.check_input.outcome == 'success'
