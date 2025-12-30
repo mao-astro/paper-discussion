@@ -22,6 +22,8 @@ import re
 import os
 import ssl
 import time
+from datetime import datetime
+import zoneinfo
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -48,7 +50,7 @@ def load_url(url, check_prefix="<?xml"):
     context = ssl._create_unverified_context()
     for i in range(1, 11):
         try:
-            feed = urllib.request.urlopen(url, timeout=20, context=context).read().decode('utf-8')
+            feed = urllib.request.urlopen(url, timeout=20, context=context).read().decode("utf-8")
         except IOError:
             pass
         else:
@@ -66,12 +68,8 @@ class ArxivEntry:
     def __getattr__(self, name):
         _ns = ARXIV_XML_NS
         if name not in self._attr_cache:
-
             if name == "authors":
-                output = [
-                    author.findtext("atom:name", "", _ns)
-                    for author in self.entry.iterfind("atom:author", _ns)
-                ]
+                output = [author.findtext("atom:name", "", _ns) for author in self.entry.iterfind("atom:author", _ns)]
             elif name == "first_author":
                 output = self.entry.find("atom:author", _ns).findtext("atom:name", "", _ns)
             elif name in ("key", "id"):
@@ -98,10 +96,7 @@ class ArxivFetcher:
             raise e
 
         first_entry = self.root.find("atom:entry", ARXIV_XML_NS)
-        if (
-            first_entry is not None
-            and first_entry.findtext("atom:title", "Error", ARXIV_XML_NS) == "Error"
-        ):
+        if first_entry is not None and first_entry.findtext("atom:title", "Error", ARXIV_XML_NS) == "Error":
             self.root.remove(first_entry)
 
         self._entries = None
@@ -131,7 +126,7 @@ def fetch_arxiv_metadata(arxiv_ids, existing_metadata=None):
     BATCH_SIZE = 50
 
     for start in range(0, len(arxiv_ids), BATCH_SIZE):
-        batch = arxiv_ids[start:(start+BATCH_SIZE)]
+        batch = arxiv_ids[start : (start + BATCH_SIZE)]
         params = urllib.parse.urlencode({"id_list": ",".join(batch), "max_results": BATCH_SIZE})
         arxiv_results = ArxivFetcher(f"{ARXIV_API_URL}?{params}")
         for entry in arxiv_results.entries:
@@ -196,127 +191,10 @@ def str2html(s):
     return "<br>".join(html.escape(line, quote=True) for line in s.splitlines())
 
 
-def build_html(rows, metadata_by_id):
+def build_html(rows, metadata_by_id, template):
     """Build the HTML string for all rows using the provided metadata."""
+
     parts = []
-
-    parts.append("<!DOCTYPE html>")
-    parts.append('<html lang="en">')
-    parts.append("<head>")
-    parts.append('  <meta charset="utf-8">')
-    parts.append('  <meta name="viewport" content="width=device-width, initial-scale=1.0">')
-    parts.append('  <link rel="preconnect" href="https://fonts.googleapis.com" />')
-    parts.append('  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />')
-    parts.append('  <meta name="creator" content="Yao-Yuan Mao">')
-    parts.append('  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;700&display=swap" rel="stylesheet">')
-    parts.append("  <title>Mao Astro Group Paper Discussion</title>")
-    parts.append('  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/modern-normalize/3.0.1/modern-normalize.min.css" integrity="sha512-q6WgHqiHlKyOqslT/lgBgodhd03Wp4BEqKeW6nNtlOY4quzyG3VoQKFrieaCeSnuVseNKRGpGeDU3qPmabCANg==" crossorigin="anonymous" referrerpolicy="no-referrer" />')
-    parts.append("""
-  <style>
-    html, body{
-      font-family: 'Source Sans 3', sans-serif;
-    }
-    body {
-      color: #222;
-    }
-    a:any-link {
-      color: #08c;
-      text-decoration: none;
-    }
-    .content {
-      max-width: 1020px;
-      margin: 0 auto;
-      padding: 0 16px 240px 16px;
-    }
-    .t1 {
-      margin: 4px 0;
-      padding: 8px;
-      background-color: #fff5f5;
-    }
-    .t2 {
-      padding: 2px;
-      display: inline-block;
-      vertical-align: top;
-    }
-    .t3 {
-      padding: 0;
-      display: inline-block;
-      width: 100%;
-    }
-    .entry-links {
-      width: 10%;
-    }
-    .entry-paper {
-      width: 87%;
-    }
-    .entry-control {
-      width: 2%;
-    }
-    .entry-id, .entry-title{
-      font-weight: 700;
-    }
-    .entry-authors{
-      font-size: 90%;
-      font-style: italic;
-    }
-    .entry-abstract, .entry-comments-all{
-      font-size: 90%;
-      padding-top: 8px;
-    }
-    .entry-comments{
-        padding-top: 4px;
-    }
-    .options {
-      margin-bottom: 15px;
-    }
-    .options div{
-      display: inline-block;
-      width: 55%;
-    }
-    .options div:last-child{
-      text-align: right;
-      width: 44%;
-    }
-    .options label{
-      display: inline-block;
-      padding: 6px;
-    }
-    @media (max-width: 800px) {
-      .t2 {
-        width: 100%;
-      }
-      .t3, .mobile_label{
-        display: inline;
-      }
-    }
-    .entries {
-      margin-bottom: 36px;
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 16px;
-    }
-    .hide{
-      display: none;
-    }
-  </style>
-""")
-    parts.append("</head>")
-    parts.append("<body>")
-    parts.append('  <div class="content">')
-    parts.append('    <h1>Mao Astro Group Paper Discussion</h1>')
-    parts.append('    <div class="options">')
-    parts.append('      <div>')
-    parts.append('        <label><input type="checkbox" name="show-abs"> Show Abstracts</label>')
-    parts.append('        <label><input type="checkbox" checked name="show-cm"> Show Comments</label>')
-    parts.append('      </div>')
-    parts.append('      <div>')
-    parts.append(f'        <i>Generated at {time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}</i>')
-    parts.append('      </div>')
-    parts.append('    </div>')  # options
-    parts.append('    <div class="entries">')
-
     for row in rows:
         arxiv_id = row["arxiv_id"]
         meta = metadata_by_id.get(arxiv_id, {})
@@ -336,10 +214,7 @@ def build_html(rows, metadata_by_id):
 
         parts.append('        <div class="t2 entry-paper">')
 
-        parts.append(
-            f'          <div class="t3 entry-title">{str2html(meta.get("title", ""))}</div>'
-
-        )
+        parts.append(f'          <div class="t3 entry-title">{str2html(meta.get("title", ""))}</div>')
 
         parts.append(
             '          <div class="t3 entry-authors">{authors}{more}</div>'.format(
@@ -350,70 +225,30 @@ def build_html(rows, metadata_by_id):
 
         parts.append("        </div>")  # entry-paper
 
-        parts.append(f'        <div class="t2 entry-control"><a class="t3" href="javascript:toggle(\'abs-{row["index"]}\')">📖</a><a class="t3" href="javascript:toggle(\'cm-{row["index"]}\')">💬</a></div>')
-
         parts.append(
-            f'        <div class="t2 entry-abstract hide" id="abs-{row["index"]}">{str2html(meta.get("abstract", ""))}</div>'
+            f'        <div class="t2 entry-control"><a class="t3" href="javascript:toggle(\'abs-{row["index"]}\')">📖</a><a class="t3" href="javascript:toggle(\'cm-{row["index"]}\')">💬</a></div>'
         )
+
+        parts.append(f'        <div class="t2 entry-abstract hide" id="abs-{row["index"]}">{str2html(meta.get("abstract", ""))}</div>')
 
         parts.append('        <div class="t2 entry-comments-all" id="cm-{}">'.format(row["index"]))
         for name, date, comments in row["comments"]:
             comments_formatted = (": " + str2html(comments)) if comments else ""
-            parts.append(
-                f'          <div class="t3 entry-comments"><b>{str2html(name)}</b> ({str2html(date)}){comments_formatted}</div>'
-            )
+            parts.append(f'          <div class="t3 entry-comments"><b>{str2html(name)}</b> ({str2html(date)}){comments_formatted}</div>')
         parts.append("        </div>")  # entry-comments-all
 
         parts.append("      </div>")  # entry
 
-    parts.append("    </div>")  # entries
-    parts.append("  </div>")  # page
-    parts.append('''
-  <script>
-    document.querySelectorAll(".t1").forEach((row, i) => {
-      row.dataset.color = (i % 2) ? "#ddd" : "#eee";
-      row.style.backgroundColor = row.dataset.color;
-      row.addEventListener("mouseenter", () => {row.style.backgroundColor = "#fff";});
-      row.addEventListener("mouseleave", () => {row.style.backgroundColor = row.dataset.color;});
-    });
+    now = datetime.now(zoneinfo.ZoneInfo("US/Mountain")).strftime("%m/%d/%Y %H:%M:%S")
+    entries = "\n".join(parts)
 
-    const toggle = function(id) {
-      document.getElementById(id).classList.toggle("hide");
-    };
-
-    const showAbsAll = function() {
-      const checked = document.querySelector('input[name="show-abs"]').checked;
-      if (checked) {
-        document.querySelectorAll(".entry-abstract").forEach((abs) => {abs.classList.remove("hide");});
-      } else {
-        document.querySelectorAll(".entry-abstract").forEach((abs) => {abs.classList.add("hide");});
-      }
-    };
-    document.querySelector('input[name="show-abs"]').addEventListener("change", showAbsAll);
-
-    const showCmAll = function() {
-      const checked = document.querySelector('input[name="show-cm"]').checked;
-      if (checked) {
-        document.querySelectorAll(".entry-comments-all").forEach((cm) => {cm.classList.remove("hide");});
-      } else {
-        document.querySelectorAll(".entry-comments-all").forEach((cm) => {cm.classList.add("hide");});
-      }
-    };
-    document.querySelector('input[name="show-cm"]').addEventListener("change", showCmAll);
-
-  </script>
-''')
-    parts.append("</body>")
-    parts.append("</html>")
-
-    return "\n".join(parts)
+    return template.replace("<!-- TIME -->", now).replace("<!-- ENTRIES -->", entries)
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Generate an HTML page from a CSV of arXiv IDs."
-    )
+    parser = argparse.ArgumentParser(description="Generate an HTML page from a CSV of arXiv IDs.")
     parser.add_argument("input_csv", help="Path to input CSV file.")
+    parser.add_argument("template_html", help="Path to HTML template file.")
     parser.add_argument("output_html", help="Path to output HTML file.")
     parser.add_argument("--cache", help="Path to cache file.")
     args = parser.parse_args(argv)
@@ -433,7 +268,10 @@ def main(argv=None):
         with open(args.cache, "w") as f:
             json.dump(metadata_by_id, f)
 
-    html_text = build_html(rows, metadata_by_id)
+    with open(args.template_html, "r") as f:
+        template = f.read()
+
+    html_text = build_html(rows, metadata_by_id, template)
 
     with open(args.output_html, "w") as f:
         f.write(html_text)
