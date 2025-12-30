@@ -11,6 +11,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Restore input cache
         uses: actions/cache/restore@v5
         with:
@@ -31,10 +34,6 @@ jobs:
         with:
           path: _data.json
           key: data-cache-
-
-      - name: Checkout repository
-        if: steps.check_input.outcome == 'success'
-        uses: actions/checkout@v6
 
       - name: Set up Python
         if: steps.check_input.outcome == 'success'
