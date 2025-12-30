@@ -25,19 +25,16 @@ jobs:
         if: ${{ hashFiles('_input.new.csv') != hashFiles('_input.csv') }}
         run: mv _input.new.csv _input.csv
 
-      - name: Save input cache
-        if: steps.check_input.outcome == 'success'
-        uses: actions/cache/save@v5
-        with:
-          path: _input.csv
-          key: input-cache-${{ github.run_id }}
-
       - name: Restore data cache
         if: steps.check_input.outcome == 'success'
         uses: actions/cache/restore@v5
         with:
           path: _data.json
           key: data-cache-
+
+      - name: Checkout repository
+        if: steps.check_input.outcome == 'success'
+        uses: actions/checkout@v6
 
       - name: Set up Python
         if: steps.check_input.outcome == 'success'
@@ -52,6 +49,13 @@ jobs:
       - name: Generate HTML
         if: steps.check_input.outcome == 'success'
         run: python run.py _input.csv _pages/index.html --cache=_data.json
+
+      - name: Save input cache
+        if: steps.check_input.outcome == 'success'
+        uses: actions/cache/save@v5
+        with:
+          path: _input.csv
+          key: input-cache-${{ github.run_id }}
 
       - name: Save data cache
         if: steps.check_input.outcome == 'success'
