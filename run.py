@@ -256,17 +256,17 @@ def main(argv=None):
     rows = process_csv_rows(read_csv(args.input_csv))
     arxiv_ids = [row["arxiv_id"] for row in rows]
 
-    if args.cache and os.path.exists(args.cache):
-        with open(args.cache, "r") as f:
-            metadata_by_id = json.load(f)
-    else:
-        metadata_by_id = None
+    metadata_by_id = None
+    if arxiv_ids:
+        if args.cache and os.path.exists(args.cache):
+            with open(args.cache, "r") as f:
+                metadata_by_id = json.load(f)
 
-    metadata_by_id = fetch_arxiv_metadata(arxiv_ids, metadata_by_id)
+        metadata_by_id = fetch_arxiv_metadata(arxiv_ids, metadata_by_id)
 
-    if args.cache:
-        with open(args.cache, "w") as f:
-            json.dump(metadata_by_id, f)
+        if args.cache:
+            with open(args.cache, "w") as f:
+                json.dump(metadata_by_id, f)
 
     with open(args.template_html, "r") as f:
         template = f.read()
