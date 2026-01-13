@@ -3,7 +3,7 @@ name: Generate arXiv HTML
 on:
   schedule:
     - cron: '0 * * * *'
-    - cron: '15,30,45 15-23 * * 1-5'
+    - cron: '20,40 15-23 * * 1-5'
   workflow_dispatch: # Allow manual triggering
   push:
     branches:
